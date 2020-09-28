@@ -9,7 +9,7 @@ import './App.css';
 
  Structure:
  */
-const GRID_SIZE = 20;
+const GRID_SIZE = 10;
 type Edge = {
   cost: number;
   from_node: Node;
@@ -296,7 +296,7 @@ function populateNeighbors(grid: Array<Array<Node>>): void {
 
 function App() {
   const [grid, setGrid] = useState(makeGrid());
-  const startNode = grid[10][10];
+  const startNode = grid[9][7];
   const endNode = grid[0][0];
   const pathWithCost = uniformCostSearch({ startNode, endNode });
   const init: Record<number, Node> = {};
@@ -310,8 +310,8 @@ function App() {
 
   const updateCost = (i: number, j: number, event: any) => {
     // This is a shallow copy... not great in React world, but eh.
+    const newCost = parseInt(event.target.value) || 0;
     const newGrid = [...grid];
-    const newCost = parseInt(event.target.value);
     const node = newGrid[i][j];
     node.cost = newCost;
     // node.neighbors.forEach(neighbor => neighbor.cost =  newCost);
