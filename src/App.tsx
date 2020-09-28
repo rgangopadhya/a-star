@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './App.css';
 /*
  We want to have a graph which we render and solve over
@@ -9,7 +9,7 @@ import './App.css';
 
  Structure:
  */
-const GRID_SIZE = 5;
+const GRID_SIZE = 20;
 type Edge = {
   cost: number;
   from_node: Node;
@@ -25,6 +25,7 @@ type NodeId = number;
   // location: for rendering
   location: Point;
   id: NodeId;
+  cost: number;
  };
 
 type Path = Array<Node>;
@@ -104,12 +105,15 @@ class PriorityQueue<T> {
     }
   }
 
-  pop(): MaybeQueueItem<T> {
+  pop(): T | undefined {
     /*
      Take the last item and make it the first, then sift down until it is >= both of its children
    */
     const result = this.peek();
     const item = this._heap.pop();
+    if (this.size() === 0) {
+      return result?.item;
+    }
     let itemIndex = 0;
     this._heap[itemIndex] = item;
     let children = this.getChildren(itemIndex);
@@ -119,7 +123,7 @@ class PriorityQueue<T> {
       itemIndex = swapTo;
       children = this.getChildren(itemIndex);
     }
-    return result;
+    return result?.item;
   }
 
   swap(indexA: number, indexB: number): void {
@@ -177,8 +181,11 @@ function breadthFirstSearch({ startNode, endNode }: { startNode: Node, endNode: 
   const frontier: Array<Node> = [startNode];
   const cameFrom: Record<NodeId, Node | null> = {[startNode.id]: null};
   while (frontier.length !== 0) {
-    const currNode = frontier.shift() || startNode;
-    console.log("===visiting===", currNode.location);
+    const currNode = frontier[0];
+    frontier.shift();
+    if (currNode.id === endNode.id) {
+      break;
+    }
     currNode.neighbors.forEach((neighbor) => {
       const next = neighbor.to_node;
       if (cameFrom[next.id]) {
@@ -187,7 +194,6 @@ function breadthFirstSearch({ startNode, endNode }: { startNode: Node, endNode: 
       frontier.push(next);
       cameFrom[next.id] = currNode;
     });
-    console.log("==frontier===", frontier.map(n => n.location));
   }
   
   let current = endNode;
@@ -200,6 +206,47 @@ function breadthFirstSearch({ startNode, endNode }: { startNode: Node, endNode: 
   return path.reverse();
 }
 
+type NodeAndCost = {
+  node: Node;
+  cost: number;
+};
+
+type PathWithCost = Array<NodeAndCost>;
+
+function uniformCostSearch({ startNode, endNode }: { startNode: Node, endNode: Node}): PathWithCost {
+  const frontier: PriorityQueue<Node> = new PriorityQueue();
+  frontier.add(startNode, 0);
+  // this needs to change. there can actually be multiple ways to get to the same item.
+  // so, we should keep track of the cost. If it is less, update.
+  // we should keep track of the cost to get to a given node... 
+  // when we reach a node, we need to take the cost to get to the prior node and sum.
+  // where is the cost to the prior node? currNode
+  const cameFrom: Record<NodeId, NodeAndCost> = {[startNode.id]: {node: startNode, cost: 0}};
+  while (frontier.size() !== 0) {
+    const currNode = frontier.pop() || startNode;
+    const costToNode = cameFrom[currNode.id].cost;
+    currNode.neighbors.forEach((neighbor) => {
+      const next = neighbor.to_node;
+      const costWithNeighbor = costToNode + next.cost;
+      const previousCost = cameFrom[next.id]?.cost;
+      if (previousCost <= costWithNeighbor) {
+        return;
+      }
+      frontier.add(next, next.cost);
+      cameFrom[next.id] = { node: currNode, cost: costWithNeighbor };
+    });
+  }
+  
+  let current = cameFrom[endNode.id];
+  const path: PathWithCost = [];
+  while (current && current.node.id !== startNode.id) {
+    path.push(current);
+    current = cameFrom[current?.node.id];
+  };
+  path.push({node: startNode, cost: 0});
+  return path.reverse();
+}
+
 function makeGrid(): Grid {
   const grid: Grid = Array.from(Array(GRID_SIZE).keys()).map((i) => {
     return Array.from(Array(GRID_SIZE).keys()).map((j) => {
@@ -207,6 +254,7 @@ function makeGrid(): Grid {
         neighbors: [],
         location: [i, j],
         id:  i * 20 + j * Math.pow(20, 2),
+        cost: 1,
       };
       return node;
     });
@@ -226,7 +274,7 @@ function populateNeighbors(grid: Array<Array<Node>>): void {
   const makeEdge = (x: number, y: number, from_node: Node): Edge => ({
     from_node,
     to_node: grid[x][y],
-    cost: 0,
+    cost: from_node.cost,
   });
   grid.forEach((row, i) => {
     row.forEach((node, j) => {
@@ -247,19 +295,28 @@ function populateNeighbors(grid: Array<Array<Node>>): void {
 }
 
 function App() {
-  const grid = makeGrid();
-  console.log(grid);
-  const startNode = grid[3][3];
+  const [grid, setGrid] = useState(makeGrid());
+  const startNode = grid[10][10];
   const endNode = grid[0][0];
-  const path = breadthFirstSearch({startNode, endNode });
+  const pathWithCost = uniformCostSearch({ startNode, endNode });
   const init: Record<number, Node> = {};
-  const pathById = path.reduce((acc, curr) => {
-    acc[curr.id] = curr;
+  const pathById = pathWithCost.reduce((acc, curr) => {
+    acc[curr.node.id] = curr.node;
     return acc;
   }, init);
-  console.log("=== path", path);
   const visitedStyle = {
     backgroundColor: 'red',
+  };
+
+  const updateCost = (i: number, j: number, event: any) => {
+    // This is a shallow copy... not great in React world, but eh.
+    const newGrid = [...grid];
+    const newCost = parseInt(event.target.value);
+    const node = newGrid[i][j];
+    node.cost = newCost;
+    // node.neighbors.forEach(neighbor => neighbor.cost =  newCost);
+    console.log("==Updated cost to", node.cost);
+    setGrid(newGrid);
   };
 
   return (
@@ -270,7 +327,11 @@ function App() {
             <tr key={i}>
               {row.map((node, j) => (
                 <td key={j} style={pathById[node.id] !== undefined ? visitedStyle : {}}>
-                  ({i},{j})
+                  <input
+                    type="text"
+                    onChange={(event) => updateCost(i, j, event)}
+                    value={node.cost}
+                  />
                 </td>
               ))}
             </tr>
